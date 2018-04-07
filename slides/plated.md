@@ -3,6 +3,7 @@
 ##
 
 https://hackage.haskell.org/package/lens
+
 <div class="notes">
 Plated is part of the lens package
 </div>
