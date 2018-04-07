@@ -4,6 +4,13 @@
 
 Recursion is boilerplate
 
+<div class="notes">
+* If you implement some function on a recursive datastructure, you're likely duplicating code
+* Pre-order, in-order, post-order, bottom-up or top-down
+* We keep re-implementing HOW to traverse the tree, but the only bit we actually care about is
+  what to do at each node
+</div>
+
 ##
 
 ```haskell
@@ -14,11 +21,9 @@ data Expr
 ```
 
 <div class="notes">
-To demonstrate this, we'll use arithmetic expressions consisting of integers,
-variables, and addition
-
-We'll define three functions which illustrate some common operations you might
-do on recursive data structures
+* Demonstrate this with running example of arithmetic expressions
+* integers, variables, and addition
+* Define three functions, some common operations you might do on recursive data structures
 </div>
 
 ##
@@ -280,9 +285,9 @@ foldConstants = rewriteFix fn
   where
     fn (Add (Fix a) (Fix b)) =
       case (a, b) of
-        (Int a', Int b') -> Just $ Int (a' <> b')
-        (Int a', Add (Fix (Int b')) c') -> Just $ Add (Fix . Int $ a' <> b') c'
-        (Add a' (Fix (Int b')), Int c') -> Just $ Add a' (Fix . Int $ b' <> c')
+        (Int a', Int b') -> Just $ Int (a' + b')
+        (Int a', Add (Fix (Int b')) c') -> Just $ Add (Fix . Int $ a' + b') c'
+        (Add a' (Fix (Int b')), Int c') -> Just $ Add a' (Fix . Int $ b' + c')
         _ -> Nothing
     fn _ = Nothing
 ```

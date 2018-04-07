@@ -75,7 +75,8 @@ data Expr
   | Var String
   deriving Generic
 
-instance Plated Expr = gplate
+instance Plated Expr where
+  plate = gplate
 ```
 <div class="notes">
 So you can get plated for free for a type that has a Generic instance
