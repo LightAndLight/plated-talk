@@ -84,7 +84,7 @@ foldTraversal
   => (forall f. Applicative f => (a -> f a) -> a -> f a)
   -> (a -> m) -> a -> m
 foldTraversal t fn a =
-  fn a <> getConst (t (\x -> Const (fn x) <*> Const (foldTraversal t fn x)) a)
+  fn a <> getConst (t (Const . foldTraversal t fn) a)
 
 vars2' :: Expr2 -> [String]
 vars2' = foldTraversal traverseExprs fn

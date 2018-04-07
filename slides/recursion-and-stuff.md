@@ -187,6 +187,8 @@ vars (Int _) = []
 ```
 <div class="notes">
 This function definition still works as is, but it's working over a Fixpoint structure.
+
+We want to generalize the pattern of "monoidal summary of a tree"
 </div>
 
 ##
@@ -221,17 +223,16 @@ optimizeAdd0 expr =
         _ -> Add (optimizeAdd0 a) (optimizeAdd0 b)
     a -> a
 ```
+<div class="notes">
+The essence of this function is "apply a transformation from the bottom up everywhere in the tree"
+</div>
 
 ##
 
 ```haskell
 transformFix :: Functor f => (f (Fix f) -> f (Fix f)) -> Fix f -> Fix f
 transformFix fn = Fix . fn . fmap (transformFix fn) . unfix
-```
 
-##
-
-```haskell
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 = transformFix fn
   where
@@ -257,6 +258,13 @@ foldConstants expr =
         _ -> Add a' b'
     a -> a
 ```
+<div class="notes">
+This one is similar to the last, in that it's a bottom up transformation, but if we wrote
+it in terms of `transformFix`, it wouldn't behave as we indended.
+
+This is because transformFix only applies a transformation once to each node, but this
+transformation might need to be applied multiple times to reach "most optimized" form
+</div>
 
 ##
 
@@ -266,11 +274,7 @@ rewriteFix fn =
   (\a -> maybe (Fix a) (rewriteFix fn . Fix) $ fn a) .
   fmap (rewriteFix fn) .
   unfix
-```
 
-##
-
-```haskell
 foldConstants :: Expr -> Expr
 foldConstants = rewriteFix fn
   where
@@ -282,6 +286,12 @@ foldConstants = rewriteFix fn
         _ -> Nothing
     fn _ = Nothing
 ```
+<div class="notes">
+We capture this behaviour by making the rule a partial function. rewriteFix will stop
+when the function returns Nothing for every subterm in the tree.
+
+'transformFix Just' will spin forever
+</div>
 
 ##
 
@@ -289,35 +299,70 @@ http://hackage.haskell.org/package/fixplate
 
 <div class="notes">
 This approach is elaborated in the fixplate package
-</div>
 
-<div class="notes">
-You can ease the pain of having Fix everywhere by using pattern synonyms,
-but there is another approach that is just as powerful, but doesn't require
-you to modify your datatype
+With the fixplate/recursion schemes style, we have abstracted over certain ways of doing
+recursive operations, and as users only have to write the core transformation logic.
+
+The cost is that we had to modify our data structure to so. We regained usability
+with type- and pattern-synonyms, so it's not a horrible way to go about it.
+
+Next I'll present an equally powerful way of writing these general recursive operations,
+without having to modify the underlying datatype.
+
+To get there, though, we're going to discuss some lens-theory
 </div>
 
 ##
 
 `Traversal`
+<div class="notes">
+Traversals are one of the oldest concepts in lens
+</div>
 
 ##
 
 ```haskell
 type Traversal s t a b = forall f. Applicative f => (a -> f b) -> s -> f t
 ```
+<div class="notes">
+They look like this.
+
+Literally, this type signature says "if you tell me how to (effectfully) transform an A into a B,
+then I will (effectfully) transform an S into a T.
+
+More intuitively, you could say that the S *contains* some As, and if you transform all those As into
+Bs, you end up with a T.
+
+We can make this more apparent by considering the simplest traversal: traverse
+</div>
 
 ##
 
 ```haskell
-traverse :: Traversable t => (a -> f b) -> t a -> f (t b)
+traverse :: (Applicative f, Traversable t) => (a -> f b) -> t a -> f (t b)
 ```
+<div class="notes">
+Traverse says says "if you tell me how to (effectfully) transform an A into a B,
+then I will (effectfully) transform a TA into a TB
+
+And to hook into that "intuitive" explanation of traversals- a TA contains some As,
+and if you transform those As intos Bs, you get a TB
+</div>
 
 ##
 
 ```haskell
+type Traversal s t a b = forall f. Applicative f => (a -> f b) -> s   -> f t
+
+traverse ::       (Traversable t, Applicative f) => (a -> f b) -> t a -> f (t b)
+
 traverse :: Traversable t => Traversal (t a) (t b) a b
 ```
+<div class="notes">
+So the type of traverse can also be written like this
+
+ASK FOR QUESTIONS
+</div>
 
 ##
 
@@ -325,6 +370,14 @@ traverse :: Traversable t => Traversal (t a) (t b) a b
 --                    forall f. Applicative f => (a -> f a) -> s -> f s
 type Traversal' s a = Traversal s s a a
 ```
+<div class="notes">
+We will also use this Traversal Prime type to express when you can't change the type
+of the target of the traversal
+
+This less-stabby version also helps lead into what traversals will mean for us:
+
+A traversal prime S A represents a PATH that touchs some, or all of the As in an S
+</div>
 
 ##
 
@@ -339,6 +392,18 @@ traverseExprs :: Traversal' Expr Expr
 traverseExprs f (Add a b) = Add <$> f a <*> f b
 traverseExprs _ expr = pure expr
 ```
+<div class="notes">
+So we'll go back to our original definition of Expr, and define a traversal which says how to
+get at all the Exprs one level down. for add, you say how to get at the left and right nodes.
+Var and Int don't contain Exprs, and we say this with pure.
+
+This is where it contrasts with the fixplate style- in recursion schemes, the DATA STRUCTURE
+only knows about a single level of chidren because we factored out the recursion
+
+But in this approach, we write a FUNCTION that says how to work over the children one level down.
+
+So how do we use it?
+</div>
 
 ##
 
@@ -348,6 +413,10 @@ vars (Var v) = [v]
 vars (Add a b) = vars a <> vars b
 vars (Int _) = []
 ```
+<div class="notes">
+Back to our monoidal summary function
+</div>
+
 
 ##
 
@@ -358,22 +427,59 @@ foldTraversal
   => Traversal' a a
   -> (a -> m) -> a -> m
 foldTraversal t fn a =
-  fn a <> getConst (t (\x -> Const (fn x) <*> Const (foldTraversal t fn x)) a)
-```
+  fn a <> getConst (t (Const . foldTraversal t fn) a)
 
-<div class="notes">
-This is called foldMapOf in lens, and is a bit more polymorphic
-</div>
-
-##
-
-```haskell
 vars :: Expr -> [String]
 vars = foldTraversal traverseExprs fn
   where
     fn (Var v) = [v]
     fn _ = []
 ```
+<div class="notes">
+This is called foldMapOf in lens, and is a bit more polymorphic
+
+This definition's a bit more of a brain-ful.
+
+The important part of Traversals is that they're quantified over all applicatives,
+so we can pick our applicative every time we call it.
+
+We choose to work in the Const applicative
+</div>
+
+##
+
+```haskell
+newtype Const a b = Const a
+
+instance Monoid a => Applicative (Const a) where
+  pure _ = Const mempty
+  Const a <*> Const b = Const (a <> b)
+```
+<div class="notes">
+Because apply for Const will accumulate its contents if its contents are a monoid
+</div>
+
+##
+
+```haskell
+foldTraversal
+  :: Monoid m
+  -- (forall f. Applicative f => (a -> f a) -> a -> f a)
+  => Traversal' a a
+  -> (a -> m) -> a -> m
+foldTraversal t fn a =
+  fn a <> getConst (t (Const . foldTraversal t fn) a)
+
+vars :: Expr -> [String]
+vars = foldTraversal traverseExprs fn
+  where
+    fn (Var v) = [v]
+    fn _ = []
+```
+<div class="notes">
+So we summarise the current node, then recursively summarise the node's children via
+the traversal, which will summarise each child node, and visit their children and so on.
+</div>
 
 ##
 
@@ -387,6 +493,9 @@ optimizeAdd0 (Add a b) =
     _ -> Add (optimizeAdd0 a) (optimizeAdd0 b)
 optimizeAdd0 (Var v) = Var v
 ```
+<div class="notes">
+We can do a similar trick for this next one, but pick a difference applicative
+</div>
 
 ##
 
@@ -396,13 +505,8 @@ transformTraversal
   :: Traversal' a a
   -> (a -> a) -> a -> a
 transformTraversal t fn =
-  fn .
-  runIdentity . t (Identity . transformTraversal t fn)
-```
+  fn . runIdentity . t (Identity . transformTraversal t fn)
 
-##
-
-```haskell
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 = transformTraversal traverseExprs fn
   where
@@ -413,6 +517,12 @@ optimizeAdd0 = transformTraversal traverseExprs fn
         _ -> Add a b
     fn a = a
 ```
+<div class="notes">
+In this case: identity
+
+So transformTraversal says "first, recursively transform the children via our Traversal,
+then tranform the result of that"
+</div>
 
 ##
 
@@ -427,6 +537,10 @@ foldConstants (Add a b) =
     _ -> Add a' b'
 foldConstants (Var v) = Var v
 ```
+<div class="notes">
+So again for foldConstants we want that behaviour of "keep running this tranformation
+until it no longer applies"
+</div>
 
 ##
 
@@ -438,11 +552,7 @@ rewriteTraversal
 rewriteTraversal t fn =
   (\x -> maybe x (rewriteTraversal t fn) $ fn x) .
   runIdentity . t (Identity . rewriteTraversal t fn)
-```
 
-##
-
-```haskell
 foldConstants :: Expr -> Expr
 foldConstants = rewriteTraversal traverseExprs fn
   where
@@ -454,3 +564,12 @@ foldConstants = rewriteTraversal traverseExprs fn
         _ -> Nothing
     fn _ = Nothing
 ```
+<div class="notes">
+It proceeds similarly to the fixplate case, but instead of fmapping we pick the identity
+applicative again so we can recursively apply the tranformation using the traversal.
+
+ASK FOR QUESTIONS
+
+This is the core of plated- generalised recursive operations that use traversals to figure
+out how to find the children inside a datatype.
+</div>
