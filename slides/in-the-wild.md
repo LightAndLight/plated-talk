@@ -47,7 +47,7 @@ rewrite fixMutableDefaultArguments :: Statement -> Statement
 
 rewrite optimizeTailRecursion :: Statement -> Statement
 
-rewrite foldConstants :: Statement -> Maybe Statement
+rewrite foldConstants :: Statement -> Statement
 ```
 
 <div class="notes">

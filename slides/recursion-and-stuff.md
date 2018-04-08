@@ -283,8 +283,8 @@ rewriteFix fn =
 foldConstants :: Expr -> Expr
 foldConstants = rewriteFix fn
   where
-    fn (Add (Fix a) (Fix b)) =
-      case (a, b) of
+    fn (Add a b) =
+      case (unfix a, unfix b) of
         (Int a', Int b') -> Just $ Int (a' + b')
         (Int a', Add (Fix (Int b')) c') -> Just $ Add (Fix . Int $ a' + b') c'
         (Add a' (Fix (Int b')), Int c') -> Just $ Add a' (Fix . Int $ b' + c')
@@ -441,8 +441,6 @@ vars = foldTraversal traverseExprs fn
     fn _ = []
 ```
 <div class="notes">
-This is called foldMapOf in lens, and is a bit more polymorphic
-
 This definition's a bit more of a brain-ful.
 
 The important part of Traversals is that they're quantified over all applicatives,

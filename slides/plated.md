@@ -19,19 +19,26 @@ In this module
 
 ```haskell
 -- Control.Lens.Fold
-foldMapOf :: Monoid m => Traversal s t a b -> (a -> m) -> s -> m
-
 transformOf :: Traversal' a a -> (a -> a) -> a -> a
 
 rewriteOf :: Traversal' a a -> (a -> Maybe a) -> a -> a
+
+cosmosOf :: Traversal' a a -> Fold a a
 ```
 <div class="notes">
-foldTraversal, transformTraversal and rewriteTraversal are all there, but by different
+transformTraversal and rewriteTraversal are there by different
 names. foldTraversal is foldMapOf, which is actually found in Control.Lens.Fold because is
 a really-really- general operator
 
 transformTraversal and rewriteTraversal are called transformOf and rewriteOf respectively,
 which follows a broader naming convention found throughout lens.
+
+fold - read only traversal
+given a traversal that targets the immediate children,
+cosmosOf creates a fold over the transitive children
+
+You can write the "vars" function with this in a much more compositional way.
+Later.
 </div>
 
 ##
@@ -46,7 +53,8 @@ transform = transformOf plate
 rewrite :: Plated a => (a -> Maybe a) -> a -> a
 rewrite = rewriteOf plate
 
-...
+cosmos :: Plated a => Fold a a
+cosmos = cosmosOf plate
 ```
 <div class="notes">
 Control.Lens.Plated also defines the Plated typeclass, and convenience functions
@@ -89,9 +97,24 @@ use it with all the other lens operations
 ##
 
 ```haskell
-universeOf :: Traversal' a a -> a -> [a]
-universe :: Plated a => a -> [a]
+-- Control.Lens.Fold
+toListOf :: Fold s a -> s -> [a]
 
+_Int :: Prism' Expr Int
+_Add :: Prism' Expr (Expr, Expr)
+_Var :: Prism' Expr String
+
+vars :: Expr -> [String]
+vars = toListOf (cosmos._Var)
+```
+<div class="notes">
+If you have prisms on your constructors, you can use cosmos to "find" all
+occurrences of a particular construtor.
+</div>
+
+##
+
+```haskell
 -- Context a a a ~ (a, a -> a)
 contextsOf :: Traversal' a a -> a -> [Context a a a]
 contexts :: Plated a => a -> [Context a a a]
@@ -100,9 +123,7 @@ holesOf :: Traversal' a a -> a -> [Pretext {-# NOPE #-}]
 holes :: Plated a => a -> [Pretext {-# NOPE #-}]
 ```
 <div class="notes">
-There's more than just rewrite and transform. Here's some cool ones:
-
-universe: collect all the As in a tree transitively
+There's more than just rewrite transform and cosmos. Here's some cool ones:
 
 contexts: collect all the As in a tree transitively, but also enumerate
 their contexts. That is, make holes where their children should go so that
