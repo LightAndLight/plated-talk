@@ -49,7 +49,7 @@ optimizeAdd0 (Add a b) =
   case (optimizeAdd0 a, optimizeAdd0 b) of
     (Int 0, b') -> b'
     (a', Int 0) -> a'
-    _ -> Add a' b'
+    (a', b') -> Add a' b'
 optimizeAdd0 a = a
 ```
 
@@ -65,9 +65,9 @@ Replace all the occurrences of something <> 0, or 0 <> something with just the s
 foldConstants :: Expr -> Expr
 foldConstants (Add a b) =
   case (foldConstants a, foldConstants b) of
-    (Int a', Int b') -> Int (a' <> b')
-    (Int a', Add (Int b') c') -> Add (Int $ a' <> b') c'
-    (Add a' (Int b'), Int c') -> Add a' (Int $ b' <> c')
+    (Int a', Int b') -> foldConstants $ Int (a' <> b')
+    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' <> b') c'
+    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' <> c')
     _ -> Add a' b'
 foldConstants a = a
 ```
@@ -76,6 +76,10 @@ foldConstants a = a
 3. Whole program transformation
 
 When constants are being added, do the addition. This is a common compiler optimization.
+
+The recursive call in the first branch is redundant but I've left it there for consistency
+reasons
+
 There are probably some more cases you need to get complete folding, but this is enough for us.
 </div>
 
@@ -88,26 +92,10 @@ data Expr
   | Var String
 
 vars :: Expr -> [String]
-vars (Var v) = [v]
-vars (Add a b) = vars a <> vars b
-vars (Int _) = []
 
 optimizeAdd0 :: Expr -> Expr
-optimizeAdd0 (Add a b) =
-  case (optimizeAdd0 a, optimizeAdd0 b) of
-    (Int 0, b') -> b'
-    (a', Int 0) -> a'
-    _ -> Add a' b'
-optimizeAdd0 a = a
 
 foldConstants :: Expr -> Expr
-foldConstants (Add a b) =
-  case (foldConstants a, foldConstants b) of
-    (Int a', Int b') -> Int (a' <> b')
-    (Int a', Add (Int b') c') -> Add (Int $ a' <> b') c'
-    (Add a' (Int b'), Int c') -> Add a' (Int $ b' <> c')
-    _ -> Add a' b'
-foldConstants a = a
 ```
 
 <div class="notes">
@@ -138,7 +126,8 @@ that applied everywhere in the structure.
 ##
 
 ```haskell
-AddF (IntF 1) (AddF (VarF "x") (IntF 3)) :: ExprF (ExprF (ExprF a))
+one_plus_x_plus_3 :: ExprF (ExprF (ExprF a))
+one_plus_x_plus_3 = AddF (IntF 1) (AddF (VarF "x") (IntF 3)) 
 ```
 
 <div class="notes">
@@ -155,7 +144,12 @@ newtype Fix f = Fix { unfix :: f (Fix f) }
 ##
 
 ```haskell
-Fix (AddF (Fix $ IntF 1) (Fix $ AddF (Fix $ VarF "x") (Fix $ IntF 3))) :: Fix ExprF
+one_plus_x_plus_3 :: Fix ExprF
+one_plus_x_plus_3 =
+  Fix $
+  AddF
+    (Fix $ IntF 1)
+    (Fix $ AddF (Fix $ VarF "x") (Fix $ IntF 3))
 ```
 <div class="notes">
 Now the term can be as deeply nested as we want and the type remains constant
@@ -199,7 +193,10 @@ We want to generalize the pattern of "monoidal summary of a tree"
 ##
 
 ```haskell
-foldFix :: (Foldable f, Monoid m) => (forall x. f x -> m) -> Fix f -> m
+foldFix
+  :: (Foldable f, Monoid m)
+  => (forall x. f x -> m)
+  -> Fix f -> m
 foldFix fn (Fix a) = fn a <> foldMap (foldFix fn) a
 
 vars :: Expr -> [String]
@@ -220,13 +217,13 @@ We summarise the current node, then recursively summarise its children by foldMa
 ```haskell
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 expr =
-  Fix $ case unfix expr of
+  case unfix expr of
     Add a b ->
-      case (unfix a, unfix b) of
-        (Int 0, _) -> optimizeAdd0 b
-        (_, Int 0) -> optimizeAdd0 a
-        _ -> Add (optimizeAdd0 a) (optimizeAdd0 b)
-    a -> a
+      case (unfix $ optimizeAdd0 a, unfix $ optimizeAdd0 b) of
+        (Int 0, b') -> b'
+        (a', Int 0) -> a'
+        (a', b') -> Fix $ Add a' b'
+    a -> Fix a
 ```
 <div class="notes">
 The essence of this function is "apply a transformation from the bottom up everywhere in the tree"
@@ -234,8 +231,13 @@ The essence of this function is "apply a transformation from the bottom up every
 
 ##
 
+<style>.reveal pre code { max-height: 410px; }</style>
+
 ```haskell
-transformFix :: Functor f => (f (Fix f) -> f (Fix f)) -> Fix f -> Fix f
+transformFix
+  :: Functor f
+  => (f (Fix f) -> f (Fix f))
+  -> Fix f -> Fix f
 transformFix fn = Fix . fn . fmap (transformFix fn) . unfix
 
 optimizeAdd0 :: Expr -> Expr
@@ -254,14 +256,17 @@ optimizeAdd0 = transformFix fn
 ```haskell
 foldConstants :: Expr -> Expr
 foldConstants expr =
-  Fix $ case unfix expr of
+  case unfix expr of
     Add a b ->
-      case (foldConstants a, foldConstants b) of
-        (Int a', Int b') -> Int (a' <> b')
-        (Int a', Add (Int b') c') -> Add (Int $ a' <> b') c'
-        (Add a' (Int b'), Int c') -> Add a' (Int $ b' <> c')
-        _ -> Add a' b'
-    a -> a
+      case (unfix $ foldConstants a, unfix $ foldConstants b) of
+        (Int a', Int b') ->
+          foldConstants . Fix $ Int (a' <> b')
+        (Int a', Add (Int b') c') ->
+          foldConstants . Fix $ Add (Int $ a' <> b') c'
+        (Add a' (Int b'), Int c') ->
+          foldConstants . Fix $ Add a' (Int $ b' <> c')
+        _ -> Fix $ Add a' b'
+    a -> Fix a
 ```
 <div class="notes">
 This one is similar to the last, in that it's a bottom up transformation, but if we wrote
@@ -273,8 +278,17 @@ transformation might need to be applied multiple times to reach "most optimized"
 
 ##
 
+<div>
+<style>
+  .reveal pre code { max-height: 520px; }
+  .reveal code { font-size: 0.75em; }
+</style>
+
 ```haskell
-rewriteFix :: Functor f => (f (Fix f) -> Maybe (f (Fix f))) -> Fix f -> Fix f
+rewriteFix
+  :: Functor f
+  => (f (Fix f) -> Maybe (f (Fix f)))
+  -> Fix f -> Fix f
 rewriteFix fn =
   (\a -> maybe (Fix a) (rewriteFix fn . Fix) $ fn a) .
   fmap (rewriteFix fn) .
@@ -291,6 +305,8 @@ foldConstants = rewriteFix fn
         _ -> Nothing
     fn _ = Nothing
 ```
+</div>
+
 <div class="notes">
 We capture this behaviour by making the rule a partial function. rewriteFix will stop
 when the function returns Nothing for every subterm in the tree.
@@ -357,9 +373,8 @@ and if you transform those As intos Bs, you get a TB
 ##
 
 ```haskell
-type Traversal s t a b = forall f. Applicative f => (a -> f b) -> s   -> f t
-
-traverse ::       (Traversable t, Applicative f) => (a -> f b) -> t a -> f (t b)
+type Traversal s t a b =       ... Applicative f => (a -> f b) -> s   -> f t
+traverse ::                    ... Applicative f => (a -> f b) -> t a -> f (t b)
 
 traverse :: Traversable t => Traversal (t a) (t b) a b
 ```
@@ -372,7 +387,8 @@ ASK FOR QUESTIONS
 ##
 
 ```haskell
---                    forall f. Applicative f => (a -> f a) -> s -> f s
+-- forall f. Applicative f => (a -> f a) -> s -> f s
+
 type Traversal' s a = Traversal s s a a
 ```
 <div class="notes">
@@ -392,7 +408,7 @@ data Expr
   | Add Expr Expr
   | Var String
   
---               forall f. Applicative f => (Expr -> f Expr) -> Expr -> f Expr
+-- forall f. Applicative f => (Expr -> f Expr) -> Expr -> f Expr
 traverseExprs :: Traversal' Expr Expr
 traverseExprs f (Add a b) = Add <$> f a <*> f b
 traverseExprs _ expr = pure expr
@@ -490,10 +506,10 @@ the traversal, which will summarise each child node, and visit their children an
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 (Int i) = Int i
 optimizeAdd0 (Add a b) =
-  case (a, b) of
-    (Int 0, _) -> optimizeAdd0 b
-    (_, Int 0) -> optimizeAdd0 a
-    _ -> Add (optimizeAdd0 a) (optimizeAdd0 b)
+  case (optimizeAdd0 a, optimizeAdd0 b) of
+    (Int 0, b') -> b'
+    (a', Int 0) -> a'
+    (a', b') -> Add a' b'
 optimizeAdd0 (Var v) = Var v
 ```
 <div class="notes">
@@ -534,9 +550,9 @@ foldConstants :: Expr -> Expr
 foldConstants (Int i) = Int i
 foldConstants (Add a b) =
   case (foldConstants a, foldConstants b) of
-    (Int a', Int b') -> Int (a' <> b')
-    (Int a', Add (Int b') c') -> Add (Int $ a' <> b') c'
-    (Add a' (Int b'), Int c') -> Add a' (Int $ b' <> c')
+    (Int a', Int b') -> foldConstants $ Int (a' <> b')
+    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' <> b') c'
+    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' <> c')
     _ -> Add a' b'
 foldConstants (Var v) = Var v
 ```

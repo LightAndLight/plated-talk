@@ -6,8 +6,8 @@ let
   revealjs = pkgs.fetchFromGitHub {
     owner = "hakimel";
     repo = "reveal.js";
-    rev = "43eada79901830702bd40dce857831aef8e76759";
-    sha256 = "5be5c1b831e0f4a4f955f76340c2d08c8a1a57c5be5dd68592fd5be511e76bda";
+    rev = "a2e69a4b42f9e968406f62073d1c4bf0ea2d3361";
+    sha256 = "0aclgbdb52zxhpzi9zvwxsx4qvvq2wy74bxm8l0lcj0csxqzrjm0";
   };
 
 in
@@ -27,6 +27,7 @@ in
           $src/slides/recursion-and-stuff.md \
           $src/slides/plated.md \
           $src/slides/in-the-wild.md \
+          $src/slides/further-reading.md \
           > slides.md
       pandoc -t revealjs --variable=transition:none --highlight-style=zenburn -s slides.md -o index.html
       rm slides.md

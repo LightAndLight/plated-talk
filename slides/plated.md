@@ -18,7 +18,6 @@ In this module
 ##
 
 ```haskell
--- Control.Lens.Fold
 transformOf :: Traversal' a a -> (a -> a) -> a -> a
 
 rewriteOf :: Traversal' a a -> (a -> Maybe a) -> a -> a
