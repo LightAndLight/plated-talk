@@ -2,6 +2,8 @@
 
 ##
 
+<style>.reveal code { font-size: 0.75em; }</style>
+
 Recursion is boilerplate
 
 <div class="notes">
@@ -65,9 +67,9 @@ Replace all the occurrences of something <> 0, or 0 <> something with just the s
 foldConstants :: Expr -> Expr
 foldConstants (Add a b) =
   case (foldConstants a, foldConstants b) of
-    (Int a', Int b') -> foldConstants $ Int (a' <> b')
-    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' <> b') c'
-    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' <> c')
+    (Int a', Int b') -> foldConstants $ Int (a' + b')
+    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' + b') c'
+    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' + c')
     _ -> Add a' b'
 foldConstants a = a
 ```
@@ -111,7 +113,7 @@ Let's explore the ways we can improve this.
 ```haskell
 data ExprF a
   = IntF Int
-  | AddF a a
+  | AddF a a    -- was:    Add Expr Expr
   | VarF String
   deriving (Functor, Foldable)
 ```
@@ -173,6 +175,8 @@ Type synonym,
 Nesting Fix and unfix everywhere gets tedious, so we can define pattern synonyms
 and use a completeness pragma to make it all easier
 
+Explain pattern synonyms and COMPLETE
+
 Let's have a look at how we can use this new structure to eliminate some boilerplate
 </div>
 
@@ -198,7 +202,21 @@ foldFix
   => (forall x. f x -> m)
   -> Fix f -> m
 foldFix fn (Fix a) = fn a <> foldMap (foldFix fn) a
+```
 
+<div class="notes">
+We can exploit this idea of "operating on a single node, and applying that everywhere"
+for monoidal summaries, if the node is foldable
+
+This is a pre-order traversal because we summaries the current node first,
+could change it to post-order by swapping args of <>
+
+We summarise the current node, then recursively summarise its children by foldMap-ing.
+</div>
+
+##
+
+```haskell
 vars :: Expr -> [String]
 vars = foldFix fn
   where
@@ -206,10 +224,8 @@ vars = foldFix fn
     fn _ = []
 ```
 <div class="notes">
-We can exploit this idea of "operating on a single node, and applying that everywhere"
-for monoidal summaries, if the node is foldable
-
-We summarise the current node, then recursively summarise its children by foldMap-ing.
+Only need to write the var case, combining the children of Add is done by
+foldMap
 </div>
 
 ##
@@ -239,7 +255,11 @@ transformFix
   => (f (Fix f) -> f (Fix f))
   -> Fix f -> Fix f
 transformFix fn = Fix . fn . fmap (transformFix fn) . unfix
+```
 
+##
+
+```haskell
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 = transformFix fn
   where
@@ -250,6 +270,11 @@ optimizeAdd0 = transformFix fn
         _ -> Add a b
     fn a = a
 ```
+<div class="notes">
+Note: when we write the transformation, we don't refer to a recursive
+case. We just assume that the transformation has been applied to the children,
+and only consider what needs to be done to the current node
+</div>
 
 ##
 
@@ -260,11 +285,11 @@ foldConstants expr =
     Add a b ->
       case (unfix $ foldConstants a, unfix $ foldConstants b) of
         (Int a', Int b') ->
-          foldConstants . Fix $ Int (a' <> b')
+          foldConstants . Fix $ Int (a' + b')
         (Int a', Add (Int b') c') ->
-          foldConstants . Fix $ Add (Int $ a' <> b') c'
+          foldConstants . Fix $ Add (Int $ a' + b') c'
         (Add a' (Int b'), Int c') ->
-          foldConstants . Fix $ Add a' (Int $ b' <> c')
+          foldConstants . Fix $ Add a' (Int $ b' + c')
         _ -> Fix $ Add a' b'
     a -> Fix a
 ```
@@ -278,12 +303,6 @@ transformation might need to be applied multiple times to reach "most optimized"
 
 ##
 
-<div>
-<style>
-  .reveal pre code { max-height: 520px; }
-  .reveal code { font-size: 0.75em; }
-</style>
-
 ```haskell
 rewriteFix
   :: Functor f
@@ -293,7 +312,11 @@ rewriteFix fn =
   (\a -> maybe (Fix a) (rewriteFix fn . Fix) $ fn a) .
   fmap (rewriteFix fn) .
   unfix
+```
 
+##
+
+```haskell
 foldConstants :: Expr -> Expr
 foldConstants = rewriteFix fn
   where
@@ -305,7 +328,6 @@ foldConstants = rewriteFix fn
         _ -> Nothing
     fn _ = Nothing
 ```
-</div>
 
 <div class="notes">
 We capture this behaviour by making the rule a partial function. rewriteFix will stop
@@ -316,7 +338,7 @@ when the function returns Nothing for every subterm in the tree.
 
 ##
 
-http://hackage.haskell.org/package/fixplate
+https://hackage.haskell.org/package/fixplate
 
 <div class="notes">
 This approach is elaborated in the fixplate package
@@ -374,7 +396,7 @@ and if you transform those As intos Bs, you get a TB
 
 ```haskell
 type Traversal s t a b =       ... Applicative f => (a -> f b) -> s   -> f t
-traverse ::                    ... Applicative f => (a -> f b) -> t a -> f (t b)
+traverse              ::       ... Applicative f => (a -> f b) -> t a -> f (t b)
 
 traverse :: Traversable t => Traversal (t a) (t b) a b
 ```
@@ -449,7 +471,11 @@ foldTraversal
   -> (a -> m) -> a -> m
 foldTraversal t fn a =
   fn a <> getConst (t (Const . foldTraversal t fn) a)
+```
 
+##
+
+```haskell
 vars :: Expr -> [String]
 vars = foldTraversal traverseExprs fn
   where
@@ -488,7 +514,11 @@ foldTraversal
   -> (a -> m) -> a -> m
 foldTraversal t fn a =
   fn a <> getConst (t (Const . foldTraversal t fn) a)
+```
 
+##
+
+```haskell
 vars :: Expr -> [String]
 vars = foldTraversal traverseExprs fn
   where
@@ -525,7 +555,11 @@ transformTraversal
   -> (a -> a) -> a -> a
 transformTraversal t fn =
   fn . runIdentity . t (Identity . transformTraversal t fn)
+```
 
+##
+
+```haskell
 optimizeAdd0 :: Expr -> Expr
 optimizeAdd0 = transformTraversal traverseExprs fn
   where
@@ -550,9 +584,9 @@ foldConstants :: Expr -> Expr
 foldConstants (Int i) = Int i
 foldConstants (Add a b) =
   case (foldConstants a, foldConstants b) of
-    (Int a', Int b') -> foldConstants $ Int (a' <> b')
-    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' <> b') c'
-    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' <> c')
+    (Int a', Int b') -> foldConstants $ Int (a' + b')
+    (Int a', Add (Int b') c') -> foldConstants $ Add (Int $ a' + b') c'
+    (Add a' (Int b'), Int c') -> foldConstants $ Add a' (Int $ b' + c')
     _ -> Add a' b'
 foldConstants (Var v) = Var v
 ```
@@ -571,15 +605,19 @@ rewriteTraversal
 rewriteTraversal t fn =
   (\x -> maybe x (rewriteTraversal t fn) $ fn x) .
   runIdentity . t (Identity . rewriteTraversal t fn)
+```
 
+##
+
+```haskell
 foldConstants :: Expr -> Expr
 foldConstants = rewriteTraversal traverseExprs fn
   where
     fn (Add a b) =
-      case (foldConstants a, foldConstants b) of
-        (Int a', Int b') -> Just $ Int (a' <> b')
-        (Int a', Add (Int b') c') -> Just $ Add (Int $ a' <> b') c'
-        (Add a' (Int b'), Int c') -> Just $ Add a' (Int $ b' <> c')
+      case (a, b) of
+        (Int a', Int b') -> Just $ Int (a' + b')
+        (Int a', Add (Int b') c') -> Just $ Add (Int $ a' + b') c'
+        (Add a' (Int b'), Int c') -> Just $ Add a' (Int $ b' + c')
         _ -> Nothing
     fn _ = Nothing
 ```
