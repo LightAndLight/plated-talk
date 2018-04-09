@@ -1,0 +1,9 @@
+Examples for hpython transformations
+Explain patterns and complete
+<> -> + foldconstants
+foldfox transformfix --- pre-order postorder
+rewritetraversal foldconstants
+stack blow
+separate recursive implementations on slides
+exprf notes?
+http -> https
