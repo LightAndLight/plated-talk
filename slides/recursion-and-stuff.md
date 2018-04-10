@@ -2,7 +2,10 @@
 
 ##
 
-<style>.reveal code { font-size: 0.75em; }</style>
+<style>
+.reveal code { font-size: 0.75em; }
+.reveal pre code { max-height: 600px; }
+</style>
 
 Recursion is boilerplate
 
