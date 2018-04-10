@@ -81,26 +81,30 @@ isMutable ...
 ##
 
 <style>
-.reveal pre code { max-height: 600px; }
+.reveal pre code { max-height: 650px; }
 </style>
 
 ```haskell
 fixMutableDefaultArguments :: Statement -> Maybe Statement
 fixMutableDefaultArguments input = do
   (name, params, body) <- input ^? _Fundef
-
   let paramsList = toList params
-  targetParams <- paramsList ^? folded._KeywordParam.filtered (isMutable._kpExpr)
+  _ <- paramsList ^? folded._KeywordParam.filtered (isMutable._kpExpr)
 
   let
+    targetParams =
+      paramsList ^.. folded._KeywordParam.filtered (isMutable._kpExpr)
+
     conditionalAssignments =
-      (\(pname, value) -> if_ (var_ pname `is_` none_) [ var_ pname .= value ]) <$>
+      (\(pname, value) ->
+         if_ (var_ pname `is_` none_) [ var_ pname .= value ]) <$>
       zip
-        (targetParams ^.. kpName.identValue)
+        (targetParams ^.. folded.kpName.identValue)
         (paramsList ^.. folded._KeywordParam.kpExpr.filtered isMutable)
 
     newparams =
-      paramsList & traverse._KeywordParam.filtered (isMutable._kpExpr).kpExpr .~ none_
+      paramsList &
+      traverse._KeywordParam.filtered (isMutable._kpExpr).kpExpr .~ none_
 
   pure $
     def_ name newparams
